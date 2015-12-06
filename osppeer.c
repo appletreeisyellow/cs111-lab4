@@ -20,6 +20,7 @@
 #include <pwd.h>
 #include <time.h>
 #include <limits.h>
+#include <sys/wait.h>
 #include "md5.h"
 #include "osp2p.h"
 
@@ -33,8 +34,12 @@ static int listen_port;
  * a bounded buffer that simplifies reading from and writing to peers.
  */
 
-#define TASKBUFSIZ	4096	// Size of task_t::buf
-#define FILENAMESIZ	256	// Size of task_t::filename
+// Exercise 2B: increase TASKBUFSIZ to allow more peer to log on tracker
+//#define TASKBUFSIZ	4096			// Size of task_t::buf
+#define TASKBUFSIZ	16777216	// 4096*256*16 = 16777216 ~16 MB
+								// TASKBUF is able to contain up to 16 MAX_FILESIZ file
+#define FILENAMESIZ	256			// Size of task_t::filename
+#define MAX_FILESIZ 1048576		// 4096* 256 = 1048576 ~1 MB
 
 typedef enum tasktype {		// Which type of connection is this?
 	TASK_TRACKER,		// => Tracker connection
@@ -90,8 +95,8 @@ static task_t *task_new(tasktype_t type)
 	t->total_written = 0;
 	t->peer_list = NULL;
 
-	strcpy(t->filename, "");
-	strcpy(t->disk_filename, "");
+	memset(t->filename, 0, FILENAMESIZ);
+	memset(t->disk_filename, 0, FILENAMESIZ);
 
 	return t;
 }
@@ -140,6 +145,7 @@ static void task_free(task_t *t)
  * A bounded buffer for storing network data on its way into or out of
  * the application layer.
  */
+
 
 typedef enum taskbufresult {		// Status of a read or write attempt.
 	TBUF_ERROR = -1,		// => Error; close the connection.
@@ -474,7 +480,15 @@ task_t *start_download(task_t *tracker_task, const char *filename)
 		error("* Error while allocating task");
 		goto exit;
 	}
-	strcpy(t->filename, filename);
+	
+	// Exercise 2B: check download filename size
+	if(strlen(t->filename) > FILENAMESIZ){
+		error("* Filename is too long.\n");
+		goto exit;
+	}
+	
+	strncpy(t->filename, filename, FILENAMESIZ-1);
+	t->filename[FILENAMESIZ-1] = '\0';
 
 	// add peers
 	s1 = tracker_task->buf;
@@ -504,6 +518,12 @@ static void task_download(task_t *t, task_t *tracker_task)
 	assert((!t || t->type == TASK_DOWNLOAD)
 	       && tracker_task->type == TASK_TRACKER);
 
+	// Exercise 2B: check download filename size
+	if(strlen(t->filename) > FILENAMESIZ){
+		error("* Filename is too long.\n");
+		goto try_again;
+	}
+	
 	// Quit if no peers, and skip this peer
 	if (!t || !t->peer_list) {
 		error("* No peers are willing to serve '%s'\n",
@@ -530,8 +550,10 @@ static void task_download(task_t *t, task_t *tracker_task)
 	// "foo.txt~1~".  However, if there are 50 local files, don't download
 	// at all.
 	for (i = 0; i < 50; i++) {
-		if (i == 0)
-			strcpy(t->disk_filename, t->filename);
+		if (i == 0){
+			strncpy(t->disk_filename, t->filename, FILENAMESIZ-1);
+			t->disk_filename[FILENAMESIZ-1] = '\0';
+		}
 		else
 			sprintf(t->disk_filename, "%s~%d~", t->filename, i);
 		t->disk_fd = open(t->disk_filename,
@@ -565,6 +587,12 @@ static void task_download(task_t *t, task_t *tracker_task)
 		ret = write_from_taskbuf(t->disk_fd, t);
 		if (ret == TBUF_ERROR) {
 			error("* Disk write error");
+			goto try_again;
+		}
+		
+		// Exercise 2B: Limite the maximun file size
+		if(t->total_written > MAX_FILESIZ){
+			error("* File is too large to download!\n");
 			goto try_again;
 		}
 	}
@@ -647,6 +675,31 @@ static void task_upload(task_t *t)
 	}
 	t->head = t->tail = 0;
 
+	// Exercise 2B: check upload filename size
+	if(strlen(t->filename) > FILENAMESIZ){
+		error("* Filename is too long.\n");
+		goto exit;
+	}
+	
+	// Exercise 2B: Check each peer should only serve in its current directory
+	char file_path[PATH_MAX];
+	char current_work_dir[PATH_MAX];
+	// get the name of current working directory
+	if(!getcwd(current_work_dir, PATH_MAX)){ 
+		error("* Failed to obtain the name of the current working directory.\n");
+		goto exit;
+	}
+	// get absolute pathname 
+	if(!realpath(t->filename, file_path)){
+		error("* Failed to obtain absolute pathname.\n");
+		goto exit;
+	}
+	// compare to see if this is the current directory
+	if(strncmp(current_work_dir, file_path, strlen(current_work_dir)) != 0){ 
+		error("* %s is not in the current working directory.\n", t->filename);
+		goto exit;
+	}
+	
 	t->disk_fd = open(t->filename, O_RDONLY);
 	if (t->disk_fd == -1) {
 		error("* Cannot open file %s", t->filename);
@@ -688,6 +741,7 @@ int main(int argc, char *argv[])
 	char *s;
 	const char *myalias;
 	struct passwd *pwent;
+	int num_downloaded;
 
 	osp2p_sscanf("164.67.100.231:12997", "%I:%d",
 		     &tracker_addr, &tracker_port);
@@ -743,14 +797,48 @@ int main(int argc, char *argv[])
 	listen_task = start_listen();
 	register_files(tracker_task, myalias);
 
+	num_downloaded = 0;
+	
 	// First, download files named on command line.
-	for (; argc > 1; argc--, argv++)
-		if ((t = start_download(tracker_task, argv[1])))
-			task_download(t, tracker_task);
+	for (; argc > 1; argc--, argv++){
+		if ((t = start_download(tracker_task, argv[1]))){
+			pid_t pid;
+			// download files in parallel 
+			pid = fork();
+			if(pid == 0){ // child process
+				task_download(t, tracker_task);
+				num_downloaded++;
+				exit(0);
+			}
+			else if (pid < 0){
+				error("* Failed to download files!\n");
+			}
+		}	
+	}	
+	
+	// wait until all children finish downloading, then we can start uploading
+	while(num_downloaded > 0){
+		waitpid(-1, NULL, 0);
+		num_downloaded--;
+	}
+	
 
 	// Then accept connections from other peers and upload files to them!
-	while ((t = task_listen(listen_task)))
-		task_upload(t);
+	while ((t = task_listen(listen_task))){
+		pid_t pid;
+		// upload files in parallel
+		pid = fork();
+		if(pid == 0){
+			task_upload(t);
+			exit(0);
+		}
+		else if(pid < 0){
+			error("* Failed to upload files!\n");
+		}
+		
+	}
+		
+		
 
 	return 0;
 }

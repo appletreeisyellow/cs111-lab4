@@ -13,22 +13,55 @@
 # information you'd like us to know, please add it at the end of the file.
 
 # Partner 1
-Name: 
-Student ID: 
-Email: 
+Name: Chunchun Ye
+Student ID: 304-502-384
+Email: yechunchun@ucla.edu
 
 # Partner 2 (if you're working in a team)
-Name: 
-Student ID: 
-Email: 
+Name: Kexin Yu
+Student ID: 804-316-935
+Email: kexinyu@ucla.edu
 
 # EXERCISE 1: What method you used to make your peer download and upload
 #    files in parallel?  (~1-3 sentences)
+We implemented the concurrency by forking processes. We make all the files
+to be downloaded first, and then start uploading all the files. 
 
 # EXERCISE 2A: What conditions did you find and fix that would have
 #    triggered a buffer overrun bug?  (~1-3 sentences each)
+strcpy() is a function that can cause buffer overflow because it may copy
+the file whose size may be larger than TASKBUFSIZ.
+We replaced strcpy() with strncpy() in start_download() and task_download()
+to enforce that the copied file size does not exceed TASKBUFSIZ.
+
 
 # EXERCISE 2B: What other robustness problems did you fix?  (~1-3 sentences
 #    each)
+- Pre-allocated enough space for filename and disk_filename:
+    We replaced strcpy() with memset() in task_new() to allocate a fixed size 
+    array for filename and disk_filename to avoid future buffer overflow.
+	
+- Check download filename legnth 
+	If a download filenanme is too long, show error massage and exit in 
+	start_download() or try_again in task_download().
+	
+- Check upload filename length
+	If an upload filenanme is too long, show error massage and exit in 
+	task_upload()
+
+- Check each peer should only serve in its current directory
+	Compare the current working directory path with file path. If they 
+	are different, means the file is not within the peer's current 
+	directory.
+
+- Limite the maximun file size
+	We don't want to download a really big file, so we set a maximun file 
+	size.
+	
+- Tracker communication should not have too many peers logged in at once:
+	TASKBUFSIZ is not large enough to allow many peers to be logged in at
+	once, so we increased the value of TASKBUFSIZ
+
+
 
 # Add any other information you'd like us to know below this line.
