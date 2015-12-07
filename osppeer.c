@@ -4,6 +4,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -33,7 +34,7 @@ static int listen_port;
  * a bounded buffer that simplifies reading from and writing to peers.
  */
 
-#define TASKBUFSIZ	4096	// Size of task_t::buf
+#define TASKBUFSIZ	65536 // Size of task_t::buf
 #define FILENAMESIZ	256	// Size of task_t::filename
 
 typedef enum tasktype {		// Which type of connection is this?
@@ -140,6 +141,9 @@ static void task_free(task_t *t)
  * A bounded buffer for storing network data on its way into or out of
  * the application layer.
  */
+
+// prevent infinite data
+#define MAXFILESIZ 65536
 
 typedef enum taskbufresult {		// Status of a read or write attempt.
 	TBUF_ERROR = -1,		// => Error; close the connection.
@@ -474,7 +478,10 @@ task_t *start_download(task_t *tracker_task, const char *filename)
 		error("* Error while allocating task");
 		goto exit;
 	}
-	strcpy(t->filename, filename);
+
+	// BUG fixed: buffer overflow
+	strncpy(t->filename, filename, FILENAMESIZ);
+	t->filename[FILENAMESIZ - 1] = '\0';
 
 	// add peers
 	s1 = tracker_task->buf;
@@ -562,6 +569,11 @@ static void task_download(task_t *t, task_t *tracker_task)
 			/* End of file */
 			break;
 
+		if (t->total_written > MAXFILESIZ) {
+			error("Error: %s exceeds the maximum file size", t->filename);
+			goto try_again;
+		}
+
 		ret = write_from_taskbuf(t->disk_fd, t);
 		if (ret == TBUF_ERROR) {
 			error("* Disk write error");
@@ -647,6 +659,40 @@ static void task_upload(task_t *t)
 	}
 	t->head = t->tail = 0;
 
+	char file_path_buff[PATH_MAX + 1];
+	char curr_path_buff[PATH_MAX + 1];
+	char* file_path = realpath(t->filename, file_path_buff);
+	char* curr_path = getcwd(curr_path_buff, PATH_MAX + 1);
+
+	// check if path exists
+	if (!curr_path) {
+		errno = ENOENT;
+		error("Error: Invalid pathname.\n");
+		goto exit;
+	}
+
+	// check if path exists
+	if (!file_path) {
+		errno = ENOENT;
+		error("Error: Invalid pathname.\n");
+		goto exit;
+	}
+
+	// check if file exists
+	struct stat data;
+	if (stat(file_path, &data) < 0) {
+		errno = ENOENT;
+		error("Error: No such file.\n");
+		goto exit;
+	}
+
+	// check if file is in current directory
+	if (strncmp(curr_path, file_path, strlen(curr_path))) {
+		errno = ENOENT;
+		error("Error: File not in current directory.\n");
+		goto exit;
+	}
+
 	t->disk_fd = open(t->filename, O_RDONLY);
 	if (t->disk_fd == -1) {
 		error("* Cannot open file %s", t->filename);
@@ -688,6 +734,8 @@ int main(int argc, char *argv[])
 	char *s;
 	const char *myalias;
 	struct passwd *pwent;
+
+	int num_download = 0;
 
 	osp2p_sscanf("164.67.100.231:12997", "%I:%d",
 		     &tracker_addr, &tracker_port);
@@ -743,14 +791,43 @@ int main(int argc, char *argv[])
 	listen_task = start_listen();
 	register_files(tracker_task, myalias);
 
+	pid_t pid;
 	// First, download files named on command line.
 	for (; argc > 1; argc--, argv++)
-		if ((t = start_download(tracker_task, argv[1])))
-			task_download(t, tracker_task);
+		if ((t = start_download(tracker_task, argv[1]))) {
+			pid = fork();
+			if (pid == 0) {
+				task_download(t, tracker_task);
+				exit(0);
+			}else if(pid > 0) {
+				num_download++;
+			}
+			else {
+				error("Forking error.");
+			}
+		}
+
+	while (num_download > 0) {
+		waitpid(-1, 0, WNOHANG);
+		num_download--;
+	}
+
+	// Downloads finished
 
 	// Then accept connections from other peers and upload files to them!
-	while ((t = task_listen(listen_task)))
-		task_upload(t);
+	while ((t = task_listen(listen_task))) {
+		pid = fork();
+		if (pid == 0) {
+			task_upload(t);
+			exit(0);
+		}
+		else if (pid > 0) {
+			continue;
+		}
+		else {
+			error("Forking error.");
+		}
+	}
 
 	return 0;
 }
