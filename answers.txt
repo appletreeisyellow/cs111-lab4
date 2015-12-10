@@ -65,9 +65,9 @@ to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
 	able to monopolize the peer's resources and fill up its disk. If the size does 
 	exceed the limit, the task will be rejected. 
 	
-- Tracker communication should not have too many peers logged in at once:
-	TASKBUFSIZ is not large enough to allow many peers to be logged in at
-	once, so we increased the value of TASKBUFSIZ
+- Communications with tracker proceed normally even when many peers logged in at once:
+	Initially, TASKBUFSIZ is not large enough to allow many peers to be logged in 
+	at once. We increased the value of TASKBUFSIZ in macro to fix the problem. 
 
 
 
