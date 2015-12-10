@@ -52,7 +52,7 @@ to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
 	
 - Check upload filename length
 	If an upload filenanme is too long, print error massage and goto "exit" 
-	in task_upload()
+	in task_upload().
 
 - Check each peer only serves in its current directory
 	Use getcwd() to get the absolute pathname of the current working directory.
