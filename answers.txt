@@ -24,39 +24,46 @@ Email: kexinyu@ucla.edu
 
 # EXERCISE 1: What method you used to make your peer download and upload
 #    files in parallel?  (~1-3 sentences)
-We implemented the concurrency by forking processes. We make all the files
-to be downloaded first, and then start uploading all the files. 
+We implemented parallelism by creating new processes with fork() in main(). 
+Each child is responsible for handling a downloading task. The parent waits 
+until all children finish their downloading tasks and then starts uploading.
+
 
 # EXERCISE 2A: What conditions did you find and fix that would have
 #    triggered a buffer overrun bug?  (~1-3 sentences each)
-strcpy() is a function that can cause buffer overflow because it may copy
-the file whose size may be larger than TASKBUFSIZ.
+char *strcpy(char *dest, const char *src) is a function that can cause buffer 
+overflow because it may copy a file whose size exceeeds TASKBUFSIZ.
+char *strncpy(char *dest, const char *src, size_t n) ensure that at most n 
+bytes of src are copied.
 We replaced strcpy() with strncpy() in start_download() and task_download()
-to enforce that the copied file size does not exceed TASKBUFSIZ.
+to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
 
 
 # EXERCISE 2B: What other robustness problems did you fix?  (~1-3 sentences
 #    each)
-- Pre-allocated enough space for filename and disk_filename:
-    We replaced strcpy() with memset() in task_new() to allocate a fixed size 
-    array for filename and disk_filename to avoid future buffer overflow.
+- Pre-allocate enough space for filename and disk_filename:
+    	Replace strcpy(t->filename, "") with memset(t->filename, 0, FILENAMESIZ) 
+    	in task_new() to allocate a fixed size array for filename and disk_filename 
+    	to avoid future buffer overflows.
 	
 - Check download filename legnth 
-	If a download filenanme is too long, show error massage and exit in 
-	start_download() or try_again in task_download().
+	If a download filenanme is too long, print error massage and goto "exit" 
+	in start_download() or "try_again" in task_download().
 	
 - Check upload filename length
-	If an upload filenanme is too long, show error massage and exit in 
-	task_upload()
+	If an upload filenanme is too long, print error massage and goto "exit" 
+	in task_upload()
 
-- Check each peer should only serve in its current directory
-	Compare the current working directory path with file path. If they 
-	are different, means the file is not within the peer's current 
-	directory.
+- Check each peer only serves in its current directory
+	Use getcwd() to get the absolute pathname of the current working directory.
+	Use realpath to get the absolute pathname of the file.
+	Compare the two with strncpy(). If they are different, the peer may serve 
+	files outside its current directory and so the task will be stopped.
 
-- Limite the maximun file size
-	We don't want to download a really big file, so we set a maximun file 
-	size.
+- Limit the maximum file size for downloading
+	Set the maximum file size for downloading to make sure other peers are not 
+	able to monopolize the peer's resources and fill up its disk. If the size does 
+	exceed the limit, the task will be rejected. 
 	
 - Tracker communication should not have too many peers logged in at once:
 	TASKBUFSIZ is not large enough to allow many peers to be logged in at
