@@ -46,16 +46,6 @@ to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
     	in task_new() to allocate a fixed size array for filename and disk_filename 
     	to avoid future buffer overflows.
 	
-<<<<<<< HEAD
-=======
-- Check download filename legnth 
-	If a download filenanme is too long, print error massage and goto "exit" 
-	in start_download() or "try_again" in task_download().
-	
-- Check upload filename length
-	If an upload filenanme is too long, print error massage and goto "exit" 
-	in task_upload().
->>>>>>> aa22aaa0f8a27b382913cc8f89f6130f9174fd0d
 
 - Check each peer only serves in its current directory
 	Use getcwd() to get the absolute pathname of the current working directory.
