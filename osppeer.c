@@ -582,7 +582,7 @@ static void task_download(task_t *t, task_t *tracker_task)
 			goto try_again;
 		}
 		
-		// Exercise 2B: Limite the maximun file size
+		// Exercise 2B: Limit the maximun file size
 		if(t->total_written > MAX_FILESIZ){
 			error("* File is too large. Try another peer now...\n");
 			goto try_again;
