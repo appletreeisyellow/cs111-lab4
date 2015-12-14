@@ -41,13 +41,6 @@ to enforce that the copied file size does not exceed TASKBUFSIZ.
     We replaced strcpy() with memset() in task_new() to allocate a fixed size 
     array for filename and disk_filename to avoid future buffer overflow.
 	
-- Check download filename legnth 
-	If a download filenanme is too long, show error massage and exit in 
-	start_download() or try_again in task_download().
-	
-- Check upload filename length
-	If an upload filenanme is too long, show error massage and exit in 
-	task_upload()
 
 - Check each peer should only serve in its current directory
 	Compare the current working directory path with file path. If they 
@@ -58,9 +51,9 @@ to enforce that the copied file size does not exceed TASKBUFSIZ.
 	We don't want to download a really big file, so we set a maximun file 
 	size.
 	
-- Tracker communication should not have too many peers logged in at once:
-	TASKBUFSIZ is not large enough to allow many peers to be logged in at
-	once, so we increased the value of TASKBUFSIZ
+- Communications with tracker proceed normally even when many peers logged in at once:
+	Initially, TASKBUFSIZ is not large enough to allow many peers to be logged in 
+	at once. We increased the value of TASKBUFSIZ in macro to fix the problem. 
 
 
 
