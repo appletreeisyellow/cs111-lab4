@@ -25,18 +25,18 @@ Email: kexinyu@ucla.edu
 # EXERCISE 1: What method you used to make your peer download and upload
 #    files in parallel?  (~1-3 sentences)
 We implemented parallelism by creating new processes with fork() in main(). 
-Each child is responsible for handling a downloading task. The parent waits 
-until all children finish their downloading tasks and then starts uploading.
+Each child process is responsible for handling one downloading task. The parent 
+waits until all children have finished and then starts the uploading tasks.
 
 
 # EXERCISE 2A: What conditions did you find and fix that would have
 #    triggered a buffer overrun bug?  (~1-3 sentences each)
-char *strcpy(char *dest, const char *src) is a function that can cause buffer 
-overflow because it may copy a file whose size exceeeds TASKBUFSIZ.
-char *strncpy(char *dest, const char *src, size_t n) ensure that at most n 
-bytes of src are copied.
+char *strcpy(char *dest, const char *src) can cause buffer overflow because 
+it may copy a file whose size exceeeds TASKBUFSIZ;
+char *strncpy(char *dest, const char *src, size_t n) only allows at most n 
+bytes of src to be copied.
 We replaced strcpy() with strncpy() in start_download() and task_download()
-to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
+to ensure that the size of the copied file does not exceed TASKBUFSIZ.
 
 
 # EXERCISE 2B: What other robustness problems did you fix?  (~1-3 sentences
@@ -49,18 +49,18 @@ to guarantee that the size of the copied file does not exceed TASKBUFSIZ.
 
 - Check each peer only serves in its current directory
 	Use getcwd() to get the absolute pathname of the current working directory.
-	Use realpath to get the absolute pathname of the file.
-	Compare the two with strncpy(). If they are different, the peer may serve 
+	Use realpath() to get the absolute pathname of the file.
+	Compare two paths with strncpy(). If they are different, the peer may serve 
 	files outside its current directory and so the task will be stopped.
 
 - Limit the maximum file size for downloading
 	Set the maximum file size for downloading to make sure other peers are not 
 	able to monopolize the peer's resources and fill up its disk. If the size does 
-	exceed the limit, the task will be rejected. 
+	exceed the limit, the task will be stopped. 
 	
 - Communications with tracker proceed normally even when many peers logged in at once:
 	Initially, TASKBUFSIZ is not large enough to allow many peers to be logged in 
-	at once. We increased the value of TASKBUFSIZ in macro to fix the problem. 
+	at once. We increased the value of TASKBUFSIZ to fix the problem. 
 
 
 
